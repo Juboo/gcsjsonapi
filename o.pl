@@ -5,16 +5,19 @@ use warnings;
 use JSON;
 use Data::Dumper;
 use POSIX;
+use LWP::UserAgent;
 use Google::API::Client;
 use OAuth2::Client;
 
+my $ua = LWP::UserAgent->new;
 my $service = Google::API::Client->new->build('storage', 'v1beta1');
 my $secrets = 'client_secrets.json';
 my $dat_file = 'token.dat';
 my $auth = OAuth2::Client->new_from_client_secrets($secrets, $service->{auth_doc});
 my @access_token = get_or_restore_token($dat_file, $auth);
 
-&list_methods;
+&insert_object;
+store_token($dat_file, $auth);
 exit(0);
 
 my($opt, $bucket, $obj) = @ARGV;
@@ -23,20 +26,16 @@ if ($bucket !~ 'edermask' && $bucket !~ 'gkubed' && $bucket !~ 'rabbimike' && $b
 }
 if ($opt =~ 'errything') {
     &list_errything;
-}
-elsif ($opt =~ 'buckets') {
+} elsif ($opt =~ 'buckets') {
     &list_buckets;
-}
-elsif ($opt =~ 'objects') {
+} elsif ($opt =~ 'objects') {
     &list_objects($bucket);
-}
-elsif ($opt =~ 'get') {
+} elsif ($opt =~ 'get') {
     &list_objects($bucket);
     print 'Object: ';
     $obj = <STDIN>; chomp($obj);
     &get_objects($bucket, $obj);
-}
-else {
+} else {
     die "Invalid argument: $opt";
 }
 
@@ -56,6 +55,7 @@ sub list_errything {
 		bucket => "$bucket",
 	    }
 	    )->execute({ auth_driver => $auth });
+
 	for (my $y = 0; $y < scalar(@{$req->{items}}); $y++) {
 	    print "\t--> ${$req->{items}}[$y]->{id} ".ceil(${$req->{items}}[$y]->{media}->{length} / 1024)." KB\n";
 	    $total += ${$req->{items}}[$y]->{media}->{length};
@@ -101,18 +101,18 @@ sub get_objects {
 	)->execute({ auth_driver => $auth });
     my @filename = split('/', $obj);
     open(FILE, ">$filename[-1]") || die "$filename[-1]: $!";
-    binmode FILE; # for MSDOS derivations.
+    binmode FILE;
     print FILE $res;
     close(FILE);
     print "$filename[-1] saved in current directory.\n";
 }
 
-sub list_methods {
-    my $res = $service->bucketAccessControls->list(
-	body => {
-	    bucket => 'wuboo',
-	}
-	)->execute({ auth_driver => $auth });
+sub insert_object {
+    # my $res = $service->objects->insert;
+    
+    my $raw_data = `cat spiderskin.jpg`;
+    my $res = $service->objects->insert(media_body => 'spiderskin.jpg', body => { bucket => 'jub', }, )->execute({ auth_driver => $auth });
+
     print Dumper($res);
 }
 
@@ -132,7 +132,6 @@ sub get_or_restore_token {
     else {
         my $auth_url = $auth_driver->authorize_uri;
         print "Go to the following link in your browser: $auth_url";
-
         print 'Enter verification code: ';
         my $code = <STDIN>; chomp($code);
         $access_token = $auth_driver->exchange($code);
